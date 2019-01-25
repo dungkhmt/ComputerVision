@@ -1,0 +1,3 @@
+Phát triển engine để tô màu ảnh đen trắng.
+-Engine thuật toán
+-WebApp demo: upload ảnh đen trắng, chuyển sang ảnh màu và hiển thị lên giao diện 
