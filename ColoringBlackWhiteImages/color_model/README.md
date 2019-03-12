@@ -1,2 +1,2 @@
-# colorman
+# colorization_model
 
