@@ -402,23 +402,6 @@ class SENet(nn.Module):
 
     def forward(self, x):
         return self.featuremaps(x)
-        # v = self.global_avgpool(f)
-        # v = v.view(v.size(0), -1)
-
-        # if self.fc is not None:
-        #     v = self.fc(v)
-
-        # if not self.training:
-        #     return v
-
-        # y = self.classifier(v)
-
-        # if self.loss == {'xent'}:
-        #     return y
-        # elif self.loss == {'xent', 'htri'}:
-        #     return y, v
-        # else:
-        #     raise KeyError("Unsupported loss: {}".format(self.loss))
 
 
 def init_pretrained_weights(model, model_url):

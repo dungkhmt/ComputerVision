@@ -14,6 +14,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
+import torch.multiprocessing as mp
 from torch.optim import lr_scheduler
 
 from args import argument_parser, image_dataset_kwargs, optimizer_kwargs
@@ -35,30 +36,22 @@ args = parser.parse_args()
 
 def main():
     global args
-    glob_min_loss = 0.2
-    args.source_names = ['total-text']
-    # args.source_names = ['mars']
+    glob_min_loss = 1  # 0.0291
+    args.source_names = ['synth-text-2']
     args.target_names = ['total-text']
-    args.height = 512
-    args.width = 512
+    args.height = 352
+    args.width = 352
     args.optim = 'amsgrad'
-    # args.label_smooth = True
     args.lr = 0.0003
-    # args.weight_decay = 1e-4
-    # args.gamma = 0.1
-    args.max_epoch = 100
-    args.stepsize = [20,60]
-    args.train_batch_size = 1
-    # args.workers=1
-    args.arch = 'resnet50'
-    args.save_dir = 'log/resnet50-textfield'
+    args.max_epoch = 1
+    args.stepsize = [35, 50]
+    args.train_batch_size = 4
+    args.workers = 8
+    args.arch = 'se_resnext101_32x4d'
+    args.save_dir = 'log/se_resnext101_32x4d-final-text-net-synth-text'
     args.gpu_devices = '0'
-    # args.lambda_xent = 1
-    # args.lambda_htri = 1
-    # args.resume = 'log/resnet50-textfield/quick_save_checkpoint_ep3.pth.tar'
-    # args.load_weights = 'log/resnet50-textfield/quick_save_checkpoint_ep21.pth.tar'
-    # args.start_epoch = 47
-
+    args.resume = 'log/se_resnext101_32x4d-final-text-net-synth-text/quick_save_checkpoint_ep1_100000.pth.tar'
+    # args.load_weights = 'log/se_resnext101_32x4d-final-text-net-synth-text/quick_save_checkpoint_ep1_100000.pth.tar'
     set_random_seed(args.seed)
     if not args.use_avai_gpus:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_devices
@@ -74,10 +67,6 @@ def main():
         cudnn.benchmark = True
     else:
         print("Currently using CPU, however, GPU is highly recommended")
-
-    print("Initializing image data manager")
-    dm = DetectImageManager(use_gpu, **image_dataset_kwargs(args))
-    trainloader = dm.return_dataloaders()
 
     print("Initializing model: {}".format(args.arch))
     model = models.init_model(name=args.arch)
@@ -101,26 +90,50 @@ def main():
         model_dict.update(pretrain_dict)
         model.load_state_dict(model_dict)
         print("Loaded pretrained weights from '{}'".format(args.load_weights))
+        del checkpoint
+        torch.cuda.empty_cache()
 
+    start_idx = 0
     if args.resume and check_isfile(args.resume):
         checkpoint = torch.load(args.resume)
+        if 'avg loss' in checkpoint.keys():
+            print('avg loss: ', checkpoint['avg_loss'])
         model.load_state_dict(checkpoint['state_dict'])
         args.start_epoch = checkpoint['epoch'] + 1
         print("Loaded checkpoint from '{}'".format(args.resume))
         print("- start_epoch: {}\n- rank1: {}".format(args.start_epoch,
                                                       checkpoint['rank1']))
+        if 'step' in checkpoint.keys():
+            args.start_epoch -= 1
+            start_idx = checkpoint['step']+1
+        if 'scheduler' in checkpoint.keys():
+            scheduler.load_state_dict(checkpoint['scheduler'])
+        else:
+            for epoch in range(0, args.start_epoch):
+                scheduler.step()
+                continue
+        if 'optimizer' in checkpoint.keys():
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            if use_gpu:
+                for state in optimizer.state.values():
+                    for k, v in state.items():
+                        if isinstance(v, torch.Tensor):
+                            state[k] = v.cuda()
+        del checkpoint
+        torch.cuda.empty_cache()
 
+    print('start idx', start_idx)
     if use_gpu:
         model = nn.DataParallel(model).cuda()
 
+    print("Initializing image data manager")
+    dm = DetectImageManager(model, use_gpu, **image_dataset_kwargs(args))
+    trainloader = dm.return_dataloaders()
+
     start_time = time.time()
-    ranklogger = RankLogger(args.source_names, args.target_names)
+    # ranklogger = RankLogger(args.source_names, args.target_names)
     train_time = 0
     print("=> Start training")
-
-    for epoch in range(0, args.start_epoch):
-        scheduler.step()
-        continue
 
     if args.fixbase_epoch > 0:
         print("Train {} for {} epochs while keeping other layers frozen".format(
@@ -139,7 +152,7 @@ def main():
     for epoch in range(args.start_epoch, args.max_epoch):
         start_train_time = time.time()
         local_loss = train(epoch, model, criterion,
-                           optimizer, trainloader, use_gpu)
+                           optimizer, trainloader, use_gpu, start_idx=start_idx)
         train_time += round(time.time() - start_train_time)
 
         scheduler.step()
@@ -152,10 +165,14 @@ def main():
                 state_dict = model.module.state_dict()
             else:
                 state_dict = model.state_dict()
+            optimizer_state_dict = optimizer.state_dict()
+            scheduler_state_dict = scheduler.state_dict()
             if local_loss < glob_min_loss:
                 glob_min_loss = local_loss
             save_checkpoint({
                 'state_dict': state_dict,
+                'optimizer': optimizer_state_dict,
+                'scheduler': scheduler_state_dict,
                 'rank1': 0,
                 'epoch': epoch,
                 'avg_loss': local_loss,
@@ -165,10 +182,10 @@ def main():
     train_time = str(datetime.timedelta(seconds=train_time))
     print("Finished. Total elapsed time (h:m:s): {}. Training time (h:m:s): {}.".format(
         elapsed, train_time))
-    ranklogger.show_summary()
+    # ranklogger.show_summary()
 
 
-def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=False):
+def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=False, start_idx=0):
     losses = AverageMeter()
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -181,14 +198,22 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
         open_all_layers(model)
 
     end = time.time()
+
     for batch_idx, (imgs, vecs, weights) in enumerate(trainloader):
+        if batch_idx < start_idx:
+            continue
+        # if batch_idx > 10:
+        #     break
         data_time.update(time.time() - end)
+
         if use_gpu:
-            imgs, vecs, weights = imgs.cuda(), vecs.cuda(), weights.cuda()
+            imgs, vecs, weights = imgs.cuda(
+            ), vecs.cuda(), weights.cuda()
 
         outputs = model(imgs)
 
-        loss = criterion(outputs, vecs, weights)
+        loss = criterion(
+            outputs, vecs, weights)
 
         optimizer.zero_grad()
         loss.backward()
@@ -197,7 +222,8 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
         batch_time.update(time.time() - end)
 
         losses.update(loss.item(), imgs.size(0))
-        # del loss, imgs, vecs, weights
+        # del loss, imgs, vecs, weights, outputs
+        # torch.cuda.empty_cache()
         if (batch_idx + 1) % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -205,7 +231,21 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                       epoch + 1, batch_idx + 1, len(trainloader), batch_time=batch_time,
                       data_time=data_time, loss=losses))
-
+        # print('Loss word:', loss_word.item(),
+        #           'Loss char:', loss_char.item())
+        if (batch_idx+1) % 10000 == 0:
+            if use_gpu:
+                state_dict = model.module.state_dict()
+            else:
+                state_dict = model.state_dict()
+            optimizer_state_dict = optimizer.state_dict()
+            save_checkpoint({
+                'state_dict': state_dict,
+                'optimizer': optimizer_state_dict,
+                'rank1': 0,
+                'epoch': epoch,
+                'step': batch_idx,
+            }, False, osp.join(args.save_dir, 'quick_save_checkpoint_ep' + str(epoch + 1) + '_' + str(batch_idx+1)+'.pth.tar'))
         end = time.time()
     return losses.avg
 

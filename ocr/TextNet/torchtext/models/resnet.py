@@ -95,7 +95,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers):
+    def __init__(self, block, layers,last_stride=2):
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
@@ -106,7 +106,7 @@ class ResNet(nn.Module):
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=last_stride)
 
         self._init_params()
 
@@ -186,7 +186,7 @@ def resnet34(pretrained=False, **kwargs):
     return model
 
 
-def resnet50(pretrained=False, **kwargs):
+def resnet50(pretrained=True, **kwargs):
     """Constructs a ResNet-50 model.
 
     Args:
@@ -194,7 +194,12 @@ def resnet50(pretrained=False, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
+        pretrain_dict = model_zoo.load_url(model_urls['resnet50'])
+        model_dict = model.state_dict()
+        pretrain_dict = {k: v for k, v in pretrain_dict.items(
+        ) if k in model_dict and model_dict[k].size() == v.size()}
+        model_dict.update(pretrain_dict)
+        model.load_state_dict(model_dict)
     return model
 
 

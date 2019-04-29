@@ -34,6 +34,10 @@ class RandomMirror(object):
             _, width, _ = image.shape
             for polygon in polygons:
                 polygon.points[:, 0] = width - polygon.points[:, 0]
+                # for idx in range(len(polygon.points_char)):
+                    # polygon.points_char[idx][:, 0] = width - \
+                        # polygon.points_char[idx][:, 0]
+
         return image, polygons
 
 
@@ -121,6 +125,11 @@ class Rotate(object):
                 x, y = self.rotate(center, polygon.points, angle)
                 pts = np.vstack([x, y]).T
                 polygon.points = pts
+                # for idx in range(len(polygon.points_char)):
+                    # x, y = self.rotate(center, polygon.points_char[idx], angle)
+                    # pts = np.vstack([x, y]).T
+                    # polygon.points_char[idx] = pts
+
         return img, polygons
 
 
@@ -177,8 +186,12 @@ class Padding(object):
             for polygon in polygons:
                 polygon.points[:, 0] = polygon.points[:, 0] + left
                 polygon.points[:, 1] = polygon.points[:, 1] + top
-        h, w, _ = image.shape
-        print('LOLLLL', h-height, w-width, h, w, height, width)
+                # for idx in range(len(polygon.points_char)):
+                    # polygon.points_char[idx][:,
+                                            #  0] = polygon.points_char[idx][:, 0]+left
+                    # polygon.points_char[idx][:,
+                                            #  1] = polygon.points_char[idx][:, 1]+top
+
         return image, polygons
 
 
@@ -238,14 +251,14 @@ class RandomResizedCrop(object):
 
 
 class RandomResizedLimitCrop(object):
-    def __init__(self, scale=(0.3, 1.0), ratio=(3. / 4., 4. / 3.)):
-        # self.size = (width, height)
+    def __init__(self, maxHeight=672, maxWidth=512, scale=(0.3, 1.0), ratio=(3. / 4., 4. / 3.)):
+        self.size = (maxWidth, maxHeight)
         self.scale = scale
         self.ratio = ratio
 
     @staticmethod
     def get_params(img, scale, ratio):
-        for attempt in range(10):
+        for _ in range(10):
             area = img.shape[0] * img.shape[1]
             target_area = np.random.uniform(*scale) * area
             aspect_ratio = np.random.uniform(*ratio)
@@ -258,27 +271,34 @@ class RandomResizedLimitCrop(object):
             if h < img.shape[0] and w < img.shape[1]:
                 j = np.random.randint(0, img.shape[1] - w)
                 i = np.random.randint(0, img.shape[0] - h)
+                
                 return i, j, h, w
 
         # Fallback
+        
         w = min(img.shape[0], img.shape[1])
         i = (img.shape[0] - w) // 2
         j = (img.shape[1] - w) // 2
         return i, j, w, w
 
     def __call__(self, image, polygons=None):
-        size = (image.shape[1], image.shape[0])
-        # print('aaaaaaaaa', size[0] % 32, size[1] % 32, size[0], size[1])
         i, j, h, w = self.get_params(image, self.scale, self.ratio)
 
         cropped = image[i:i + h, j:j + w, :]
-        scales = np.array([size[0] / w, size[1] / h])
+        scales = np.array([self.size[0] / w, self.size[1] / h])
         if polygons is not None:
             for polygon in polygons:
+            
                 polygon.points[:, 0] = (polygon.points[:, 0] - j) * scales[0]
                 polygon.points[:, 1] = (polygon.points[:, 1] - i) * scales[1]
+                
+                # for idx in range(len(polygon.points_char)):
+                    # polygon.points_char[idx][:, 0] = (
+                        # polygon.points_char[idx][:, 0]-j)*scales[0]
+                    # polygon.points_char[idx][:, 1] = (
+                        # polygon.points_char[idx][:, 1]-i)*scales[1]
 
-        img = cv2.resize(cropped, size)
+        img = cv2.resize(cropped, self.size)
         return img, polygons
 
 
@@ -296,53 +316,53 @@ class Normalize(object):
 
 
 class Resize(object):
-    def __init__(self, maxHeight=672, maxWidth=512, dynamic=False):
+    def __init__(self, maxHeight=512, maxWidth=512):
         self.maxHeight = maxHeight
         self.maxWidth = maxWidth
-        self.maxArea = maxHeight*maxWidth
-        self.dynamic = dynamic
 
     def __call__(self, image, polygons=None):
         h, w, _ = image.shape
-        if not self.dynamic:
-            # print('abcd',self.maxWidth,self.maxHeight)
-            image = cv2.resize(image, (self.maxWidth,
-                                       self.maxHeight))
-            scales = np.array([self.maxWidth / w, self.maxHeight / h])
-        else:
-            maxArea = self.maxArea if h*w > self.maxArea else h*w
-            aspectRatio = w/h
-            height = int(math.sqrt(maxArea/aspectRatio))
-            width = int(height*aspectRatio)
-            height = height - height % 32
-            width = width - width % 32
-            # print('bbbb', height % 32, width %
-            #       32, height, width, height*width-672*512, h, w)
-            image = cv2.resize(image, (width, height))
-            scales = np.array([width/w, height/h])
+        image = cv2.resize(image, (self.maxWidth,
+                                   self.maxHeight))
+        scales = np.array([self.maxWidth / w, self.maxHeight / h])
         if polygons is not None:
             for polygon in polygons:
                 polygon.points = polygon.points * scales
+                # for idx in range(len(polygon.points_char)):
+                    # polygon.points_char[idx] = polygon.points_char[idx]*scales
 
         return image, polygons
 
 
 class Augmentation(object):
 
-    def __init__(self, maxHeight, maxWidth, mean, std, dynamic=False):
+    def __init__(self, maxHeight, maxWidth, mean, std):
         self.maxHeight = maxHeight
         self.maxWidth = maxWidth
         self.mean = mean
         self.std = std
         self.augmentation = Compose([
-            Resize(maxHeight=maxHeight, maxWidth=maxWidth,
-                   dynamic=dynamic),
-            # Padding(),
-            # RandomResizedLimitCrop(scale=(0.24, 1.0), ratio=(0.33, 3)),
+            Padding(),
             # RandomBrightness(),
             # RandomContrast(),
-            # RandomMirror(),
-            # Rotate(),
+            RandomMirror(),
+            Rotate(),
+            RandomResizedLimitCrop(
+                maxHeight=maxHeight, maxWidth=maxWidth, scale=(0.2, 1.0), ratio=(1/3., 3)),
+            # Resize(maxHeight=maxHeight, maxWidth=maxWidth),
+            Normalize(mean, std)
+        ])
+
+    def __call__(self, image, polygons=None):
+        return self.augmentation(image, polygons)
+
+
+class WordTransform(object):
+
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
+        self.augmentation = Compose([
             Normalize(mean, std)
         ])
 
@@ -351,14 +371,13 @@ class Augmentation(object):
 
 
 class BaseTransform(object):
-    def __init__(self, maxHeight, maxWidth, mean, std, dynamic=False):
+    def __init__(self, maxHeight, maxWidth, mean, std):
         self.maxHeight = maxHeight
         self.maxWidth = maxWidth
         self.mean = mean
         self.std = std
         self.augmentation = Compose([
-            Resize(maxHeight=maxHeight, maxWidth=maxWidth,
-                   dynamic=dynamic),
+            Resize(maxHeight=maxHeight, maxWidth=maxWidth),
             Normalize(mean, std)
         ])
 
@@ -366,14 +385,18 @@ class BaseTransform(object):
         return self.augmentation(image, polygons)
 
 
-def build_transforms(maxHeight=1, maxWidth=1, batch_size=1, is_train=True, **kwargs):
+def build_transforms(maxHeight=1, maxWidth=1, batch_size=1, is_train=True, is_image=True, **kwargs):
     # use imagenet mean and std as default
     # TODO: compute dataset-specific mean and std
     imagenet_mean = [0.485, 0.456, 0.406]
     imagenet_std = [0.229, 0.224, 0.225]
     # print(maxHeight, maxWidth, batch_size, 'asdasjkdasjkdhaskdhaskjdhjk')
-    dynamic = False
+    maxHeight = maxHeight - maxHeight % 32
+    maxWidth = maxWidth - maxWidth % 32
     if is_train:
-        return Augmentation(maxHeight, maxWidth, imagenet_mean, imagenet_std, dynamic=dynamic)
+        if is_image:
+            return Augmentation(maxHeight, maxWidth, imagenet_mean, imagenet_std)
+        else:
+            return WordTransform(imagenet_mean, imagenet_std)
     else:
-        return BaseTransform(maxHeight, maxWidth, imagenet_mean, imagenet_std, dynamic=dynamic)
+        return BaseTransform(maxHeight, maxWidth, imagenet_mean, imagenet_std)

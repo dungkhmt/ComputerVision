@@ -1,9 +1,14 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from vgg import *
-from resnet import *
-from senet import *
+try:
+    from vgg import *
+    from resnet import *
+    from senet import *
+except:
+    from .vgg import *
+    from .resnet import *
+    from .senet import *
 
 
 class Upsample(nn.Module):
@@ -12,13 +17,13 @@ class Upsample(nn.Module):
         super().__init__()
         self.conv5x5 = nn.Conv2d(
             in_channels, in_channels, kernel_size=5, stride=1, padding=2)
-        # self.bn1 = nn.BatchNorm2d(in_channels)
+        self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1x1_1 = nn.Conv2d(
             in_channels, in_channels, kernel_size=1, stride=1, padding=0)
-        # self.bn2 = nn.BatchNorm2d(in_channels)
+        self.bn2 = nn.BatchNorm2d(in_channels)
         self.conv1x1_2 = nn.Conv2d(
             in_channels, out_channels, kernel_size=1, stride=1, padding=0)
-        # self.bn3 = nn.BatchNorm2d(out_channels)
+        self.bn3 = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU(inplace=True)
         self.multiply = multiply
         if multiply > 1:
@@ -28,13 +33,13 @@ class Upsample(nn.Module):
 
     def forward(self, x):
         x = self.conv5x5(x)
-        # x = self.bn1(x)
+        x = self.bn1(x)
         x = self.relu(x)
         x = self.conv1x1_1(x)
-        # x = self.bn2(x)
+        x = self.bn2(x)
         x = self.relu(x)
         x = self.conv1x1_2(x)
-        # x = self.bn3(x)
+        x = self.bn3(x)
         x = self.relu(x)
         if self.multiply > 1:
             x = self.deconv(x)
@@ -90,20 +95,22 @@ class DetectNet(nn.Module):
             self.up5x4 = Upsample(512*expansion, 128*expansion, 4)
             self.up4x2 = Upsample(256*expansion, 128*expansion, 2)
             self.up3x1 = Upsample(128*expansion, 128*expansion, 1)
-            self.concatx2 = Upsample(128*expansion*3, 128*expansion*2, 2)
-            self.up2 = nn.Sequential(
-                # nn.Conv2d(128*expansion*2, 128*expansion*2,
-                #           kernel_size=1, stride=1, padding=0),
-                # nn.ReLU(inplace=True),
-                # nn.Conv2d(128*expansion*2, 128*expansion*2,
-                #           kernel_size=1, stride=1, padding=0),
-                # nn.ReLU(inplace=True),
-                nn.Conv2d(128*expansion*2, self.output_channel,
-                          kernel_size=1, stride=1, padding=0)
-            )
-            ratio = 4/2
-            self.up1x4 = nn.ConvTranspose2d(
-                self.output_channel, self.output_channel, kernel_size=int(4*ratio), stride=int(2*ratio), padding=int(1*ratio))
+            # self.concatx2 = Upsample(128*expansion*3, 128*expansion*2, 2)
+            # self.up2 = nn.Sequential(
+            #     nn.Conv2d(128*expansion*2, 128*expansion*2,
+            #               kernel_size=1, stride=1, padding=0),
+            #     nn.ReLU(inplace=True),
+            #     nn.Conv2d(128*expansion*2, 128*expansion*2,
+            #               kernel_size=1, stride=1, padding=0),
+            #     nn.ReLU(inplace=True),
+            #     nn.Conv2d(128*expansion*2, 128*expansion*2,
+            #               kernel_size=1, stride=1, padding=0)
+            # )
+            self.up2x2 = Upsample(128*expansion*3, 128*expansion, 2)
+            # ratio = 4/2
+            # self.up1x4 = nn.ConvTranspose2d(
+            #     self.output_channel, self.output_channel, kernel_size=int(4*ratio), stride=int(2*ratio), padding=int(1*ratio))
+            self.up1x4 = Upsample(128*expansion,self.output_channel,4)
 
     def forward(self, x):
         # print('xxxxxxxxxxxx size',x.size())
@@ -117,9 +124,9 @@ class DetectNet(nn.Module):
         up3 = self.up3x1(C3)
 
         concat = torch.cat([up5, up4, up3], dim=1)
-        concat = self.concatx2(concat)
+        # concat = self.concatx2(concat)
         # print('concat',concat.size())
-        up2 = self.up2(concat)
+        up2 = self.up2x2(concat)
         # print('up2',up2.size())
         up1 = self.up1x4(up2)
         # print(up1.size())

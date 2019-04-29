@@ -13,7 +13,6 @@ class BaseDataManager(object):
                  source_names,
                  target_names,
                  root='./data',
-                 split_id=0,
                  height=672,
                  width=512,
                  train_batch_size=4,
@@ -26,7 +25,6 @@ class BaseDataManager(object):
         self.source_names = source_names
         self.target_names = target_names
         self.root = root
-        self.split_id = split_id
         self.height = height
         self.width = width
         self.train_batch_size = train_batch_size
@@ -56,6 +54,7 @@ class BaseDataManager(object):
 
 class DetectImageManager(BaseDataManager):
     def __init__(self,
+                 model,
                  use_gpu,
                  source_names,
                  target_names,
@@ -68,14 +67,14 @@ class DetectImageManager(BaseDataManager):
         for name in self.source_names:
             dataset = init_detect_dataset(root=self.root, name=name)
 
-            for img_path, annotation in dataset.train:
-                train.append([img_path, annotation])
+            for img_path, annotation_path, parse_txt in dataset.train:
+                train.append([img_path, annotation_path, parse_txt])
 
         self.train_sampler = build_train_sampler(
             train, self.train_sampler
         )
         self.trainloader = DataLoader(
-            DetectDataset(train, transform=self.transform_train), sampler=self.train_sampler,
+            DetectDataset(model, train, transform_image=self.transform_train), sampler=self.train_sampler,
             batch_size=self.train_batch_size, shuffle=False, num_workers=self.workers,
             pin_memory=self.use_gpu, drop_last=False
         )

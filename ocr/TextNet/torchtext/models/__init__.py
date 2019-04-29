@@ -1,10 +1,15 @@
 from .detect_net import DetectNet
+from .craft_net import CRAFTNet
 
 
 __model_factory = {
-    'resnet50': DetectNet,
-    'vgg16': DetectNet,
-    'se_resnext50_32x4d': DetectNet
+    'resnet50': CRAFTNet,
+    'resnet101': CRAFTNet,
+    'resnet152': CRAFTNet,
+    'vgg16': CRAFTNet,
+    # 'se_resnext50_32x4d': DetectNet,
+    'se_resnext50_32x4d': CRAFTNet,
+    'se_resnext101_32x4d': CRAFTNet
 }
 
 
