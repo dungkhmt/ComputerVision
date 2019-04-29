@@ -181,7 +181,6 @@ class DetectDataset(Dataset):
         return image, vec, weight.astype(np.float32)
 
     def make_word_vector(self, image, polygons, img_path):
-        height, width = image.shape[0:2]
         bboxes = []
         hards = []
         self.charBBs = []

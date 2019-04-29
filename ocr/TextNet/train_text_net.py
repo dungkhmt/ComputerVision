@@ -200,8 +200,8 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
     end = time.time()
 
     for batch_idx, (imgs, vecs, weights) in enumerate(trainloader):
-        if batch_idx < start_idx:
-            continue
+        # if batch_idx < start_idx:
+            # continue
         # if batch_idx > 10:
         #     break
         data_time.update(time.time() - end)
