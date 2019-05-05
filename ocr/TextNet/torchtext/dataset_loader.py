@@ -36,22 +36,22 @@ class TextInstance():
         self.orient = orient
         self.text = text
 
-        remove_points = []
+        # remove_points = []
 
-        if len(points) > 4:
-            # remove point if area is almost unchanged after removing it
-            ori_area = cv2.contourArea(points)
-            for p in range(len(points)):
-                # attempt to remove p
-                index = list(range(len(points)))
-                index.remove(p)
-                area = cv2.contourArea(points[index])
-                if np.abs(ori_area - area) / ori_area < 0.017 and len(points) - len(remove_points) > 4:
-                    remove_points.append(p)
-            self.points = np.array(
-                [point for i, point in enumerate(points) if i not in remove_points])
-        else:
-            self.points = np.array(points)
+        # if len(points) > 4:
+        #     # remove point if area is almost unchanged after removing it
+        #     ori_area = cv2.contourArea(points)
+        #     for p in range(len(points)):
+        #         # attempt to remove p
+        #         index = list(range(len(points)))
+        #         index.remove(p)
+        #         area = cv2.contourArea(points[index])
+        #         if np.abs(ori_area - area) / ori_area < 0.017 and len(points) - len(remove_points) > 4:
+        #             remove_points.append(p)
+        #     self.points = np.array(
+        #         [point for i, point in enumerate(points) if i not in remove_points])
+        # else:
+        self.points = np.array(points)
 
     def __repr__(self):
         return str(self.__dict__)

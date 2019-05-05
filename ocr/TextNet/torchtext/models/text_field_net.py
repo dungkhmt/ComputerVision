@@ -16,14 +16,11 @@ class Upsample(nn.Module):
     def __init__(self, in_channels, out_channels, multiply):
         super().__init__()
         self.conv5x5 = nn.Conv2d(
-            in_channels, in_channels, kernel_size=5, stride=1, padding=2)
-        self.bn1 = nn.BatchNorm2d(in_channels)
+            in_channels, in_channels, kernel_size=5, stride=1, padding=2, bias=False)
         self.conv1x1_1 = nn.Conv2d(
-            in_channels, in_channels, kernel_size=1, stride=1, padding=0)
-        self.bn2 = nn.BatchNorm2d(in_channels)
+            in_channels, in_channels, kernel_size=1, stride=1, padding=0, bias=False)
         self.conv1x1_2 = nn.Conv2d(
-            in_channels, out_channels, kernel_size=1, stride=1, padding=0)
-        self.bn3 = nn.BatchNorm2d(out_channels)
+            in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.multiply = multiply
         if multiply > 1:
@@ -33,13 +30,10 @@ class Upsample(nn.Module):
 
     def forward(self, x):
         x = self.conv5x5(x)
-        x = self.bn1(x)
         x = self.relu(x)
         x = self.conv1x1_1(x)
-        x = self.bn2(x)
         x = self.relu(x)
         x = self.conv1x1_2(x)
-        x = self.bn3(x)
         x = self.relu(x)
         if self.multiply > 1:
             x = self.deconv(x)
@@ -53,7 +47,7 @@ vgg = {'vgg16': vgg16}
 se_net = {'se_resnext50_32x4d': se_resnext50_32x4d}
 
 
-class DetectNet(nn.Module):
+class TextFieldNet(nn.Module):
 
     def __init__(self, backbone='vgg16', output_channel=2):
         super().__init__()
@@ -77,40 +71,24 @@ class DetectNet(nn.Module):
             self.up5x4 = Upsample(512, 256, 4)
             self.up4x2 = Upsample(512, 256, 2)
             self.up3x1 = Upsample(256, 256, 1)
-            self.concatx2 = Upsample(256*3, 512, 2)
-            self.up2 = nn.Sequential(
-                nn.Conv2d(512, 512,
-                          kernel_size=1, stride=1, padding=0),
+            self.up2x2 = nn.Sequential(
+                nn.Conv2d(256*3, 512, kernel_size=1,
+                          stride=1, padding=0, bias=False),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(512, 512,
-                          kernel_size=1, stride=1, padding=0),
+                nn.Conv2d(512, 512, kernel_size=1,
+                          stride=1, padding=0, bias=False),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(512, self.output_channel,
-                          kernel_size=1, stride=1, padding=0)
+                nn.Conv2d(512, 2, kernel_size=1,
+                          stride=1, padding=0, bias=False)
             )
-            ratio = 4/2
             self.up1x4 = nn.ConvTranspose2d(
-                self.output_channel, self.output_channel, kernel_size=int(4*ratio), stride=int(2*ratio), padding=int(1*ratio))
+                2, 2, kernel_size=8, stride=4, padding=2, bias=False)
         else:
-            self.up5x4 = Upsample(512*expansion, 128*expansion, 4)
-            self.up4x2 = Upsample(256*expansion, 128*expansion, 2)
-            self.up3x1 = Upsample(128*expansion, 128*expansion, 1)
-            # self.concatx2 = Upsample(128*expansion*3, 128*expansion*2, 2)
-            # self.up2 = nn.Sequential(
-            #     nn.Conv2d(128*expansion*2, 128*expansion*2,
-            #               kernel_size=1, stride=1, padding=0),
-            #     nn.ReLU(inplace=True),
-            #     nn.Conv2d(128*expansion*2, 128*expansion*2,
-            #               kernel_size=1, stride=1, padding=0),
-            #     nn.ReLU(inplace=True),
-            #     nn.Conv2d(128*expansion*2, 128*expansion*2,
-            #               kernel_size=1, stride=1, padding=0)
-            # )
-            self.up2x2 = Upsample(128*expansion*3, 128*expansion, 2)
-            # ratio = 4/2
-            # self.up1x4 = nn.ConvTranspose2d(
-            #     self.output_channel, self.output_channel, kernel_size=int(4*ratio), stride=int(2*ratio), padding=int(1*ratio))
-            self.up1x4 = Upsample(128*expansion,self.output_channel,4)
+            self.up5x4 = Upsample(512*expansion, 256, 4)
+            self.up4x2 = Upsample(256*expansion, 256, 2)
+            self.up3x1 = Upsample(128*expansion, 256, 1)
+            self.up2x2 = Upsample(256*3, 512, 2)
+            self.up1x4 = Upsample(512, self.output_channel, 4)
 
     def forward(self, x):
         # print('xxxxxxxxxxxx size',x.size())
@@ -135,10 +113,10 @@ class DetectNet(nn.Module):
 
 if __name__ == '__main__':
     import torch
-    input = torch.randn((1, 3, 768, 768))
-    net = DetectNet(backbone='resnet50').cuda()
-    print(net(input.cuda()).size())
+    # input = torch.randn((1, 3, 768, 768))
+    net = TextFieldNet(backbone='vgg16')
+    # print(net(input).size())
     import torchsummary
     with torch.no_grad():
-        print(torchsummary.summary(net, (3, 512, 512), batch_size=1))
+        print(torchsummary.summary(net, (3, 768, 768), batch_size=1, device='cpu'))
     exit()

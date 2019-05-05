@@ -251,7 +251,7 @@ class RandomResizedCrop(object):
 
 
 class RandomResizedLimitCrop(object):
-    def __init__(self, maxHeight=672, maxWidth=512, scale=(0.3, 1.0), ratio=(3. / 4., 4. / 3.)):
+    def __init__(self, maxHeight=512, maxWidth=512, scale=(0.1, 1.0), ratio=(1./3, 3.)):
         self.size = (maxWidth, maxHeight)
         self.scale = scale
         self.ratio = ratio
@@ -288,15 +288,8 @@ class RandomResizedLimitCrop(object):
         scales = np.array([self.size[0] / w, self.size[1] / h])
         if polygons is not None:
             for polygon in polygons:
-            
                 polygon.points[:, 0] = (polygon.points[:, 0] - j) * scales[0]
                 polygon.points[:, 1] = (polygon.points[:, 1] - i) * scales[1]
-                
-                # for idx in range(len(polygon.points_char)):
-                    # polygon.points_char[idx][:, 0] = (
-                        # polygon.points_char[idx][:, 0]-j)*scales[0]
-                    # polygon.points_char[idx][:, 1] = (
-                        # polygon.points_char[idx][:, 1]-i)*scales[1]
 
         img = cv2.resize(cropped, self.size)
         return img, polygons
@@ -347,28 +340,14 @@ class Augmentation(object):
             # RandomContrast(),
             RandomMirror(),
             Rotate(),
-            RandomResizedLimitCrop(
-                maxHeight=maxHeight, maxWidth=maxWidth, scale=(0.2, 1.0), ratio=(1/3., 3)),
-            # Resize(maxHeight=maxHeight, maxWidth=maxWidth),
+            # RandomResizedLimitCrop(
+            #     maxHeight=maxHeight, maxWidth=maxWidth, scale=(0.2, 1.0), ratio=(1/3., 3)),
+            Resize(maxHeight=maxHeight, maxWidth=maxWidth),
             Normalize(mean, std)
         ])
 
     def __call__(self, image, polygons=None):
         return self.augmentation(image, polygons)
-
-
-class WordTransform(object):
-
-    def __init__(self, mean, std):
-        self.mean = mean
-        self.std = std
-        self.augmentation = Compose([
-            Normalize(mean, std)
-        ])
-
-    def __call__(self, image, polygons=None):
-        return self.augmentation(image, polygons)
-
 
 class BaseTransform(object):
     def __init__(self, maxHeight, maxWidth, mean, std):
@@ -385,7 +364,7 @@ class BaseTransform(object):
         return self.augmentation(image, polygons)
 
 
-def build_transforms(maxHeight=1, maxWidth=1, batch_size=1, is_train=True, is_image=True, **kwargs):
+def build_transforms(maxHeight=1, maxWidth=1, batch_size=1, is_train=True, **kwargs):
     # use imagenet mean and std as default
     # TODO: compute dataset-specific mean and std
     imagenet_mean = [0.485, 0.456, 0.406]
@@ -394,9 +373,6 @@ def build_transforms(maxHeight=1, maxWidth=1, batch_size=1, is_train=True, is_im
     maxHeight = maxHeight - maxHeight % 32
     maxWidth = maxWidth - maxWidth % 32
     if is_train:
-        if is_image:
-            return Augmentation(maxHeight, maxWidth, imagenet_mean, imagenet_std)
-        else:
-            return WordTransform(imagenet_mean, imagenet_std)
+        return Augmentation(maxHeight, maxWidth, imagenet_mean, imagenet_std)
     else:
         return BaseTransform(maxHeight, maxWidth, imagenet_mean, imagenet_std)

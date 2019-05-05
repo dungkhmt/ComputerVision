@@ -1,199 +1,13 @@
+import torch
+from PIL import Image
+from torchtext.transforms import build_transforms
 import numpy as np
-import errno
-import os
+from torchtext.models import init_model
+import pickle
+from functools import partial
 import cv2
 import queue
-
-
-def mkdirs(newdir):
-    try:
-        if not os.path.exists(newdir):
-            os.makedirs(newdir)
-    except OSError as err:
-        # Reraise the error unless it's about an already existing directory
-        if err.errno != errno.EEXIST or not os.path.isdir(newdir):
-            raise
-
-
-def fill_hole(input_mask):
-    h, w = input_mask.shape
-    canvas = np.zeros((h + 2, w + 2), np.uint8)
-    canvas[1:h + 1, 1:w + 1] = input_mask.copy()
-
-    mask = np.zeros((h + 4, w + 4), np.uint8)
-
-    cv2.floodFill(canvas, mask, (0, 0), 1)
-    canvas = canvas[1:h + 1, 1:w + 1].astype(np.bool)
-
-    return (~canvas | input_mask.astype(np.uint8))
-
-
-def regularize_sin_cos(sin, cos):
-    # regularization
-    scale = np.sqrt(1.0 / (sin ** 2 + cos ** 2))
-    return sin * scale, cos * scale
-
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-
-def norm2(x, axis=None):
-    if axis:
-        return np.sqrt(np.sum(x ** 2, axis=axis))
-    return np.sqrt(np.sum(x ** 2))
-
-
-def cos(p1, p2):
-    return (p1 * p2).sum() / (norm2(p1) * norm2(p2))
-
-
-def vector_sin(v):
-    assert len(v) == 2
-    # sin = y / (sqrt(x^2 + y^2))
-    l = np.sqrt(v[0] ** 2 + v[1] ** 2)
-    return v[1] / l
-
-
-def vector_cos(v):
-    assert len(v) == 2
-    # cos = x / (sqrt(x^2 + y^2))
-    l = np.sqrt(v[0] ** 2 + v[1] ** 2)
-    return v[0] / l
-
-
-def find_bottom(pts):
-
-    if len(pts) > 4:
-        e = np.concatenate([pts, pts[:3]])
-        candidate = []
-        for i in range(1, len(pts) + 1):
-            v_prev = e[i] - e[i - 1]
-            v_next = e[i + 2] - e[i + 1]
-            if cos(v_prev, v_next) < -0.7:
-                candidate.append((i % len(pts), (i + 1) %
-                                  len(pts), norm2(e[i] - e[i + 1])))
-
-        if len(candidate) != 2 or candidate[0][0] == candidate[1][1] or candidate[0][1] == candidate[1][0]:
-            # if candidate number < 2, or two bottom are joined, select 2 farthest edge
-            mid_list = []
-            for i in range(len(pts)):
-                mid_point = (e[i] + e[(i + 1) % len(pts)]) / 2
-                mid_list.append((i, (i + 1) % len(pts), mid_point))
-
-            dist_list = []
-            for i in range(len(pts)):
-                for j in range(len(pts)):
-                    s1, e1, mid1 = mid_list[i]
-                    s2, e2, mid2 = mid_list[j]
-                    dist = norm2(mid1 - mid2)
-                    dist_list.append((s1, e1, s2, e2, dist))
-            bottom_idx = np.argsort(
-                [dist for s1, e1, s2, e2, dist in dist_list])[-2:]
-            bottoms = [dist_list[bottom_idx[0]]
-                       [:2], dist_list[bottom_idx[1]][:2]]
-        else:
-            bottoms = [candidate[0][:2], candidate[1][:2]]
-
-    else:
-        d1 = norm2(pts[1] - pts[0]) + norm2(pts[2] - pts[3])
-        d2 = norm2(pts[2] - pts[1]) + norm2(pts[0] - pts[3])
-        bottoms = [(0, 1), (2, 3)] if d1 < d2 else [(1, 2), (3, 0)]
-    assert len(bottoms) == 2, 'fewer than 2 bottoms'
-    return bottoms
-
-
-def split_long_edges(points, bottoms):
-    """
-    Find two long edge sequence of and polygon
-    """
-    b1_start, b1_end = bottoms[0]
-    b2_start, b2_end = bottoms[1]
-    n_pts = len(points)
-
-    i = b1_end + 1
-    long_edge_1 = []
-    while (i % n_pts != b2_end):
-        long_edge_1.append((i - 1, i))
-        i = (i + 1) % n_pts
-
-    i = b2_end + 1
-    long_edge_2 = []
-    while (i % n_pts != b1_end):
-        long_edge_2.append((i - 1, i))
-        i = (i + 1) % n_pts
-    return long_edge_1, long_edge_2
-
-
-def find_long_edges(points, bottoms):
-    b1_start, b1_end = bottoms[0]
-    b2_start, b2_end = bottoms[1]
-    n_pts = len(points)
-    i = (b1_end + 1) % n_pts
-    long_edge_1 = []
-
-    while (i % n_pts != b2_end):
-        start = (i - 1) % n_pts
-        end = i % n_pts
-        long_edge_1.append((start, end))
-        i = (i + 1) % n_pts
-
-    i = (b2_end + 1) % n_pts
-    long_edge_2 = []
-    while (i % n_pts != b1_end):
-        start = (i - 1) % n_pts
-        end = i % n_pts
-        long_edge_2.append((start, end))
-        i = (i + 1) % n_pts
-    return long_edge_1, long_edge_2
-
-
-def split_edge_seqence(points, long_edge, n_parts):
-
-    edge_length = [norm2(points[e1] - points[e2]) for e1, e2 in long_edge]
-    point_cumsum = np.cumsum([0] + edge_length)
-    total_length = sum(edge_length)
-    length_per_part = total_length / n_parts
-
-    cur_node = 0  # first point
-    splited_result = []
-
-    for i in range(1, n_parts):
-        cur_end = i * length_per_part
-
-        while(cur_end > point_cumsum[cur_node + 1]):
-            cur_node += 1
-
-        e1, e2 = long_edge[cur_node]
-        e1, e2 = points[e1], points[e2]
-
-        # start_point = points[long_edge[cur_node]]
-        end_shift = cur_end - point_cumsum[cur_node]
-        ratio = end_shift / edge_length[cur_node]
-        new_point = e1 + ratio * (e2 - e1)
-        # print(cur_end, point_cumsum[cur_node], end_shift, edge_length[cur_node], '=', new_point)
-        splited_result.append(new_point)
-
-    # add first and last point
-    p_first = points[long_edge[0][0]]
-    p_last = points[long_edge[-1][1]]
-    splited_result = [p_first] + splited_result + [p_last]
-    return np.stack(splited_result)
+import glob
 
 
 class Coordinate():
@@ -205,16 +19,47 @@ class Coordinate():
         return Coordinate(self.x, self.y)
 
 
+def load_model(model, model_path):
+    checkpoint = torch.load(model_path, pickle_module=pickle)
+    pretrain_dict = checkpoint['state_dict']
+    # model_dict = model.state_dict()
+    # pretrain_dict = {k: v for k, v in pretrain_dict.items(
+    # ) if k in model_dict and model_dict[k].size() == v.size()}
+    # model_dict.update(pretrain_dict)
+    # model.load_state_dict(model_dict)
+    model.load_state_dict(pretrain_dict)
+    print("Loaded pretrained weights from '{}'".format(model_path))
+    return model
+
+
+def write_image_result(name, mask):
+    # return
+    print(name)
+    height, width = mask.shape[0], mask.shape[1]
+    img = np.zeros((height, width, 3), np.uint8)
+    for i in range(height):
+        for j in range(width):
+            if mask[i][j] != 0:
+                img[i][j] = np.array([255, 255, 255])*mask[i][j]
+    cv2.imwrite(name, img)
+
+
 def process_output(image, output, raw_img, threshold, min_area):
     height, width, _ = image.shape
     pred_x = output[0, :]
     pred_y = output[1, :]
+
+    write_image_result('./trash/x_pred.png', pred_x)
+    write_image_result('./trash/y_pred.png', pred_y)
 
     magnitude, angle = cv2.cartToPolar(pred_x, pred_y)
 
     thr = np.array([threshold])
     mask = cv2.compare(magnitude, thr, cv2.CMP_GT)
     mask = mask.astype(np.float32)
+
+    write_image_result('./trash/magnitude.png', magnitude)
+    write_image_result('./trash/mask.png', mask/255)
 
     parent = np.zeros((height, width, 2), np.float32)
     ending = np.zeros((height, width), np.float32)
@@ -284,6 +129,11 @@ def process_output(image, output, raw_img, threshold, min_area):
                         if mask_pn[col-1] == 0:
                             ending_p[col] = 1
 
+    write_image_result('./trash/parent.png',
+                       np.abs(parent[:, :, 0]*parent[:, :, 1]))
+
+    write_image_result('./trash/ending.png', ending)
+
     p = Coordinate()
     pc = Coordinate()
     pt = Coordinate()
@@ -331,7 +181,7 @@ def process_output(image, output, raw_img, threshold, min_area):
     element = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     # fill hole in ending
     merged_ending = cv2.dilate(
-        ending, element, iterations=5).astype(np.float32)
+        ending, element, iterations=1).astype(np.float32)
     # dilate ending
     for row in range(0, height):
         ending_p = ending[row]
@@ -345,6 +195,8 @@ def process_output(image, output, raw_img, threshold, min_area):
                     if p.x >= 0 and p.x <= height-1 and pt.y >= 0 and pt.y <= width-1:
                         merged_ending_p = merged_ending[p.x]
                         merged_ending_p[p.y] = 1
+
+    write_image_result('./trash/ending_merge.png', merged_ending)
 
     # find connected Components
     cctmp = merged_ending.astype(np.uint8)
@@ -401,8 +253,7 @@ def process_output(image, output, raw_img, threshold, min_area):
         ratio1 = float(difsum) / float(sum_total)
         ratio2 = float(dif1+dif2+dif3+dif4) / float(sum_total)
         # keep candidate have low ratio (high opposite directions)
-        # <=0.6 mean >40% opposite directions
-        if ratio1 <= 0.6 and ratio2 <= 0.6:
+        if ratio1 <= 0.9 and ratio2 <= 0.9:
             cc_map_filted[cc_idx] = filted_idx
             filted_idx += 1
 
@@ -429,16 +280,25 @@ def process_output(image, output, raw_img, threshold, min_area):
         res = cv2.multiply(res, 1-clstmp/255)
         res = cv2.add(res, clstmp/255*i)
 
-    return seg2bbox(res, cv2.resize(raw_img, (width, height)), raw_img, min_area)
+    # print('resmax', np.amax(res), np.sum(res))
+    # res = cv2.resize(res, (raw_w, raw_h), 0, 0, cv2.INTER_NEAREST)
+    seg2bbox(res, cv2.resize(raw_img, (width, height)), raw_img, min_area)
+    # cv2.imshow('1', res)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    # exit()
 
 
 def seg2bbox(seg, img_resize, raw_img, min_area):
-    list_cnt = []
     ratio_height, ratio_width = raw_img.shape[0] / \
         img_resize.shape[0], raw_img.shape[1]/img_resize.shape[1]
-    min_area = min_area / ratio_height / ratio_width
+    min_area = min_area/ratio_height/ratio_width
+    print('min area:', min_area)
+    # seg = seg.astype(np.uint8)
     if np.amax(seg) == 0:
-        return list_cnt
+        # f = open(bbox_dir+seg_lst[num][:-4]+'.txt','w')
+        # f.close()
+        return
     filtered_seg = 0
     for idx in range(int(np.amax(seg))):
         seg_mask = (seg == (idx+1)).astype(np.uint8)
@@ -446,24 +306,92 @@ def seg2bbox(seg, img_resize, raw_img, min_area):
             filtered_seg += 1
             continue
     if np.amax(seg) == filtered_seg:
-        return list_cnt
-
+        # f = open(bbox_dir+seg_lst[num][:-4]+'.txt','w')
+        # f.close()
+        return
+    print('max seg', np.amax(seg), 'filtered', filtered_seg)
+    # f = open(bbox_dir+seg_lst[num][:-4]+'.txt','w')
+    colors = []
+    for i in range(10000):
+        colors.append((int(np.random.randint(0, 255)), int(np.random.randint(
+            0, 255)), int(np.random.randint(0, 255))))
     for idx in range(int(np.amax(seg))):
         seg_mask = (seg == (idx+1)).astype(np.uint8)
-
+        # seg_mask = cv2.dilate(seg_mask, (5, 5), iterations=1)
         if np.sum(seg_mask) <= int(min_area):
             filtered_seg += 1
             continue
         _, contours, _ = cv2.findContours(
-            seg_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            seg_mask,  cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        # if len(contours) > 1:
+        #     contours.sort(key=lambda x: cv2.contourArea(x), reverse=True)
+        # cnt = contours[0]
         maxc, maxc_idx = 0, 0
-
+        # hull =[]
         for i in range(len(contours)):
             if len(contours[i]) > maxc:
                 maxc = len(contours[i])
                 maxc_idx = i
         cnt = contours[maxc_idx]
+        # print(cnt.squeeze())
         cnt = cnt.squeeze()
         cnt = np.int0(cnt*[ratio_width, ratio_height])
-        list_cnt.append(cnt)
-    return list_cnt
+        # rect = cv2.minAreaRect(cnt)
+        # box = cv2.boxPoints(rect)
+        # box = np.int0(box*[ratio_width, ratio_height])
+        cv2.drawContours(raw_img, [cnt], 0, colors[idx], 2)
+        # cv2.rectangle(raw_img, left_top,
+        #               right_bottom, colors[idx], 3)
+        # exit()
+        # hull = cv2.convexHull(cnt)
+        # cv2.drawContours(img_resize, cnt, -1, colors[idx], 3)
+        # bbox = np.transpose(cnt, (1, 0, 2))
+        # bbox = bbox[0].astype(np.float64)
+        # bbox = bbox[:, ::-1]
+        # if bbox.shape[0]*bbox.shape[1] < 8:
+        #     continue
+        # bbox = bbox.reshape(1, bbox.shape[0]*bbox.shape[1])
+        # print(bbox)
+    # img_resize = cv2.resize(img_resize, (raw_img.shape[1], raw_img.shape[0]))
+    list_result = glob.glob('./result/result_*.jpg')
+    new_id = len(list_result)+1
+    cv2.imwrite('./result/result_'+str(new_id)+'.jpg', raw_img)
+
+
+def test(path_image):
+    import cv2
+    im = Image.open(path_image)
+    image = np.array(im)
+    cv2.imwrite('./trash/img.jpg', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+    image = cv2.imread('./trash/img.jpg')
+    raw_h, raw_w, _ = image.shape
+    transform = build_transforms(
+        maxHeight=512, maxWidth=512, is_train=False)
+    # im = torch.Tensor(im)
+    img, _ = transform(np.copy(image), None)
+    im = img.transpose(2, 0, 1)
+    im = torch.Tensor(im).to('cuda').unsqueeze(0)
+    model = init_model(name='se_resnext101_32x4d')
+    load_model(
+        model, 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep6.pth.tar')
+    model = model.to('cuda')
+    import time
+    # while True:
+    start = time.time()
+    model.eval()
+    with torch.no_grad():
+        output = model(im)
+    process_output(img, output[0].to('cpu').numpy(),
+                   image, threshold=0.3, min_area=90)
+    print('Time: ', time.time()-start, ' s')
+
+
+if __name__ == "__main__":
+    # test('./data/pdf-text/Images/Train/img17
+    # 68.jpg')
+    test('./data/total-text/Images/Test/img5.jpg')
+    # img = cv2.imread('img68.jpg')
+    # raw_h, raw_w, _ = img.shape
+    # im = cv2.resize(img, (512, 512))
+    # vec = np.load('./npy/img68.npy')
+    # process_output(im, vec, raw_h, raw_w)

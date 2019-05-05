@@ -44,14 +44,19 @@ class VGG(nn.Module):
         self.stage3 = nn.Sequential(*[self.features[layer] for layer in range(index_stage_layer[2], index_stage_layer[3])])
         self.stage4 = nn.Sequential(*[self.features[layer] for layer in range(index_stage_layer[3], index_stage_layer[4])])
         self.stage5 = nn.Sequential(*[self.features[layer] for layer in range(index_stage_layer[4], index_stage_layer[5])])
+        self.max_pool_2d = nn.MaxPool2d(kernel_size=2,stride=2)
 
 
     def forward(self, x):
         C1 = self.stage1(x)
-        C2 = self.stage2(C1)
-        C3 = self.stage3(C2)
-        C4 = self.stage4(C3)
-        C5 = self.stage5(C4)
+        C2 = self.max_pool_2d(C1)
+        C2 = self.stage2(C2)
+        C3 = self.max_pool_2d(C2)
+        C3 = self.stage3(C3)
+        C4 = self.max_pool_2d(C3)
+        C4 = self.stage4(C4)
+        C5 = self.max_pool_2d(C4)
+        C5 = self.stage5(C5)
         return C1, C2, C3, C4, C5
 
     def _initialize_weights(self):
@@ -74,7 +79,7 @@ def make_layers(cfg, batch_norm=False):
     in_channels = 3
     for v in cfg:
         if v == 'M':
-            layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+            layers += [nn.MaxPool2d(kernel_size=1, stride=1)]
         else:
             conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
             if batch_norm:
@@ -207,8 +212,8 @@ def vgg19_bn(pretrained=False, **kwargs):
 if __name__ == "__main__":
     
     import torch
-    input = torch.randn((4, 3, 512, 512)).to('cuda')
-    model = vgg16().to('cuda')
+    input = torch.randn((4, 3, 512, 512))
+    model = vgg16()
     C1, C2, C3, C4, C5 = model(input)
     print(C1.size())
     print(C2.size())

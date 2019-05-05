@@ -230,8 +230,8 @@ def resnet152(pretrained=False, **kwargs):
 if __name__ == "__main__":
     import torch
     img = torch.randn((4, 3, 512, 512))
-    model = resnet50().to('cuda')
-    C1, C2, C3, C4, C5 = model(img.to('cuda'))
+    model = resnet50()
+    C1, C2, C3, C4, C5 = model(img)
     import torchsummary
     # print(torchsummary.summary(model,(3,512,512),batch_size=4))
     print(C1.size())

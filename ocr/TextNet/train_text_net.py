@@ -36,22 +36,23 @@ args = parser.parse_args()
 
 def main():
     global args
-    glob_min_loss = 1  # 0.0291
-    args.source_names = ['synth-text-2']
+    glob_min_loss = 0.2  # 0.0291
+    args.source_names = ['total-text']
     args.target_names = ['total-text']
-    args.height = 352
-    args.width = 352
+    args.height = 512
+    args.width = 512
+    args.negative_ratio = 3
     args.optim = 'amsgrad'
-    args.lr = 0.0003
-    args.max_epoch = 1
-    args.stepsize = [35, 50]
-    args.train_batch_size = 4
+    args.lr = 1e-4
+    args.max_epoch = 100
+    args.stepsize = [40]
+    args.train_batch_size = 2
     args.workers = 8
     args.arch = 'se_resnext101_32x4d'
-    args.save_dir = 'log/se_resnext101_32x4d-final-text-net-synth-text'
+    args.save_dir = 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop'
     args.gpu_devices = '0'
-    args.resume = 'log/se_resnext101_32x4d-final-text-net-synth-text/quick_save_checkpoint_ep1_100000.pth.tar'
-    # args.load_weights = 'log/se_resnext101_32x4d-final-text-net-synth-text/quick_save_checkpoint_ep1_100000.pth.tar'
+    args.resume = 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep6.pth.tar'
+    # args.load_weights = 'log/se_resnext101_32x4d-final-text-net-total-text-lr-1e-5/quick_save_checkpoint_ep56.pth.tar'
     set_random_seed(args.seed)
     if not args.use_avai_gpus:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_devices
@@ -96,22 +97,13 @@ def main():
     start_idx = 0
     if args.resume and check_isfile(args.resume):
         checkpoint = torch.load(args.resume)
-        if 'avg loss' in checkpoint.keys():
+        if 'avg_loss' in checkpoint.keys():
             print('avg loss: ', checkpoint['avg_loss'])
         model.load_state_dict(checkpoint['state_dict'])
         args.start_epoch = checkpoint['epoch'] + 1
         print("Loaded checkpoint from '{}'".format(args.resume))
         print("- start_epoch: {}\n- rank1: {}".format(args.start_epoch,
                                                       checkpoint['rank1']))
-        if 'step' in checkpoint.keys():
-            args.start_epoch -= 1
-            start_idx = checkpoint['step']+1
-        if 'scheduler' in checkpoint.keys():
-            scheduler.load_state_dict(checkpoint['scheduler'])
-        else:
-            for epoch in range(0, args.start_epoch):
-                scheduler.step()
-                continue
         if 'optimizer' in checkpoint.keys():
             optimizer.load_state_dict(checkpoint['optimizer'])
             if use_gpu:
@@ -119,10 +111,16 @@ def main():
                     for k, v in state.items():
                         if isinstance(v, torch.Tensor):
                             state[k] = v.cuda()
+        if 'step' in checkpoint.keys():
+            args.start_epoch -= 1
+            start_idx = checkpoint['step']+1
+            print('start_idx: ',start_idx)
+        for epoch in range(0, args.start_epoch):
+            scheduler.step()
+            continue
         del checkpoint
         torch.cuda.empty_cache()
 
-    print('start idx', start_idx)
     if use_gpu:
         model = nn.DataParallel(model).cuda()
 
@@ -151,11 +149,11 @@ def main():
 
     for epoch in range(args.start_epoch, args.max_epoch):
         start_train_time = time.time()
+        scheduler.step()
         local_loss = train(epoch, model, criterion,
                            optimizer, trainloader, use_gpu, start_idx=start_idx)
+        start_idx = 0
         train_time += round(time.time() - start_train_time)
-
-        scheduler.step()
 
         if (epoch + 1) > args.start_eval and args.eval_freq > 0 and (epoch + 1) % args.eval_freq == 0 or (epoch + 1) == args.max_epoch:
             print("=> Test")
@@ -166,13 +164,11 @@ def main():
             else:
                 state_dict = model.state_dict()
             optimizer_state_dict = optimizer.state_dict()
-            scheduler_state_dict = scheduler.state_dict()
             if local_loss < glob_min_loss:
                 glob_min_loss = local_loss
             save_checkpoint({
                 'state_dict': state_dict,
                 'optimizer': optimizer_state_dict,
-                'scheduler': scheduler_state_dict,
                 'rank1': 0,
                 'epoch': epoch,
                 'avg_loss': local_loss,
@@ -200,10 +196,8 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
     end = time.time()
 
     for batch_idx, (imgs, vecs, weights) in enumerate(trainloader):
-        # if batch_idx < start_idx:
-            # continue
-        # if batch_idx > 10:
-        #     break
+        if batch_idx < start_idx:
+            continue
         data_time.update(time.time() - end)
 
         if use_gpu:
@@ -213,7 +207,7 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
         outputs = model(imgs)
 
         loss = criterion(
-            outputs, vecs, weights)
+            outputs, vecs, weights, args.negative_ratio)
 
         optimizer.zero_grad()
         loss.backward()
@@ -222,8 +216,7 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
         batch_time.update(time.time() - end)
 
         losses.update(loss.item(), imgs.size(0))
-        # del loss, imgs, vecs, weights, outputs
-        # torch.cuda.empty_cache()
+
         if (batch_idx + 1) % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -231,8 +224,7 @@ def train(epoch, model, criterion, optimizer, trainloader, use_gpu, fixbase=Fals
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                       epoch + 1, batch_idx + 1, len(trainloader), batch_time=batch_time,
                       data_time=data_time, loss=losses))
-        # print('Loss word:', loss_word.item(),
-        #           'Loss char:', loss_char.item())
+
         if (batch_idx+1) % 10000 == 0:
             if use_gpu:
                 state_dict = model.module.state_dict()
