@@ -48,10 +48,10 @@ def main():
     args.stepsize = [40]
     args.train_batch_size = 2
     args.workers = 8
-    args.arch = 'se_resnext101_32x4d'
+    args.arch = 'vgg16'
     args.save_dir = 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop'
     args.gpu_devices = '0'
-    args.resume = 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep6.pth.tar'
+    # args.resume = 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep6.pth.tar'
     # args.load_weights = 'log/se_resnext101_32x4d-final-text-net-total-text-lr-1e-5/quick_save_checkpoint_ep56.pth.tar'
     set_random_seed(args.seed)
     if not args.use_avai_gpus:

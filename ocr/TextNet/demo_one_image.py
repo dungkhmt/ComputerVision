@@ -283,10 +283,6 @@ def process_output(image, output, raw_img, threshold, min_area):
     # print('resmax', np.amax(res), np.sum(res))
     # res = cv2.resize(res, (raw_w, raw_h), 0, 0, cv2.INTER_NEAREST)
     seg2bbox(res, cv2.resize(raw_img, (width, height)), raw_img, min_area)
-    # cv2.imshow('1', res)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-    # exit()
 
 
 def seg2bbox(seg, img_resize, raw_img, min_area):
@@ -312,7 +308,7 @@ def seg2bbox(seg, img_resize, raw_img, min_area):
     print('max seg', np.amax(seg), 'filtered', filtered_seg)
     # f = open(bbox_dir+seg_lst[num][:-4]+'.txt','w')
     colors = []
-    for i in range(10000):
+    for i in range(2000):
         colors.append((int(np.random.randint(0, 255)), int(np.random.randint(
             0, 255)), int(np.random.randint(0, 255))))
     for idx in range(int(np.amax(seg))):
@@ -366,14 +362,14 @@ def test(path_image):
     image = cv2.imread('./trash/img.jpg')
     raw_h, raw_w, _ = image.shape
     transform = build_transforms(
-        maxHeight=512, maxWidth=512, is_train=False)
+        maxHeight=768, maxWidth=768, is_train=False)
     # im = torch.Tensor(im)
     img, _ = transform(np.copy(image), None)
     im = img.transpose(2, 0, 1)
     im = torch.Tensor(im).to('cuda').unsqueeze(0)
     model = init_model(name='se_resnext101_32x4d')
     load_model(
-        model, 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep6.pth.tar')
+        model, 'log/se_resnext101_32x4d-final-text-net-total-text-768-2/quick_save_checkpoint_ep43.pth.tar')
     model = model.to('cuda')
     import time
     # while True:
@@ -382,14 +378,14 @@ def test(path_image):
     with torch.no_grad():
         output = model(im)
     process_output(img, output[0].to('cpu').numpy(),
-                   image, threshold=0.3, min_area=90)
+                   image, threshold=0.4, min_area=200)
     print('Time: ', time.time()-start, ' s')
 
 
 if __name__ == "__main__":
     # test('./data/pdf-text/Images/Train/img17
     # 68.jpg')
-    test('./data/total-text/Images/Test/img5.jpg')
+    test('./data/total-text/Images/Test/img1.jpg')
     # img = cv2.imread('img68.jpg')
     # raw_h, raw_w, _ = img.shape
     # im = cv2.resize(img, (512, 512))

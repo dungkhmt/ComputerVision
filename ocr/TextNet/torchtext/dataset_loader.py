@@ -105,7 +105,7 @@ class DetectDataset(Dataset):
             top = max(0, top)
             right = min(width-1, right)
             bottom = min(height-1, bottom)
-            new_points = points - points.min(axis=0)+1
+            new_points = points - [left,top]+1
             new_height = bottom-top+3
             new_width = right-left+3
             hard = hards[bboxi]
@@ -194,19 +194,21 @@ class DetectDataset(Dataset):
 
 
     def get_training_data(self, image, polygons, image_path):
-        # im_name = image_path.split('/')[-1].split('.jpg')[0]
-        # cv2.imwrite('./trash/'+im_name+'img.jpg', image)
+        im_name = image_path.split('/')[-1].split('.jpg')[0]
+        cv2.imwrite('./trash/'+im_name+'img.jpg', image)
         if self.transform_image:
             image, polygons = self.transform_image(image, copy.copy(polygons))
-        # cv2.imwrite('./trash/'+im_name+'img_tranpose.jpg', image*255)
+        imagenet_mean = [0.485, 0.456, 0.406]
+        imagenet_std = [0.229, 0.224, 0.225]
+        cv2.imwrite('./trash/'+im_name+'img_tranpose.jpg', (image*imagenet_std+imagenet_mean)*255)
         image, vec, weight = self.make_word_vector(image, polygons, image_path)
 
-        # img = np.zeros(image.shape)
-        # for i in range(img.shape[0]):
-            # for j in range(img.shape[1]):
-                # if vec[0][i][j] != 0 or vec[1][i][j] != 0:
-                    # img[i][j] = 255
-        # cv2.imwrite('./trash/'+im_name+'vec_word.jpg', img.astype(np.uint8))
+        img = np.zeros(image.shape)
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                if vec[0][i][j] != 0 or vec[1][i][j] != 0:
+                    img[i][j] = 255
+        cv2.imwrite('./trash/'+im_name+'vec_word.jpg', img.astype(np.uint8))
 
         image = image.transpose(2, 0, 1)
         

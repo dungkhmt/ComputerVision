@@ -39,7 +39,7 @@ def test(path_input, path_output):
     mkdirs(path_output)
     model = init_model(name='se_resnext101_32x4d')
     load_model(
-        model, 'log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep46.pth.tar')
+        model, 'log/se_resnext101_32x4d-final-text-net-total-text-768-2/quick_save_checkpoint_ep81.pth.tar')
     model = model.to('cuda')
     model.eval()
     transform = build_transforms(
@@ -56,10 +56,11 @@ def test(path_input, path_output):
         with torch.no_grad():
             output = model(im)
         contours = process_output(img, output[0].to(
-            'cpu').numpy(), image, threshold=0.4, min_area=90)
+            'cpu').numpy(), image, threshold=0.4, min_area=200)
         write_to_file(contours, os.path.join(
             path_output, image_id.replace('jpg', 'txt')))
 
 
 if __name__ == "__main__":
-    test('./data/total-text/Images/Test', 'output/total-text-46-0.4-90-512-no-crop')
+    test('./data/total-text/Images/Test', 'output/total-text-768-81-0.4-200-512')
+    os.system('python Deteval.py total-text-768-81-0.4-200-512')

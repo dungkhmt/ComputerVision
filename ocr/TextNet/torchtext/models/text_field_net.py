@@ -84,11 +84,7 @@ class TextFieldNet(nn.Module):
             self.up1x4 = nn.ConvTranspose2d(
                 2, 2, kernel_size=8, stride=4, padding=2, bias=False)
         else:
-            self.up5x4 = Upsample(512*expansion, 256, 4)
-            self.up4x2 = Upsample(256*expansion, 256, 2)
-            self.up3x1 = Upsample(128*expansion, 256, 1)
-            self.up2x2 = Upsample(256*3, 512, 2)
-            self.up1x4 = Upsample(512, self.output_channel, 4)
+            pass
 
     def forward(self, x):
         # print('xxxxxxxxxxxx size',x.size())
@@ -118,5 +114,5 @@ if __name__ == '__main__':
     # print(net(input).size())
     import torchsummary
     with torch.no_grad():
-        print(torchsummary.summary(net, (3, 768, 768), batch_size=1, device='cpu'))
+        print(torchsummary.summary(net, (3, 64, 64), batch_size=1, device='cpu'))
     exit()

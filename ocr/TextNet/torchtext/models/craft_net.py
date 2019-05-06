@@ -156,10 +156,10 @@ class CRAFTNet(nn.Module):
 
 if __name__ == '__main__':
     import torch
-    input = torch.randn((1, 3, 512, 512))
-    net = CRAFTNet(backbone='se_resnext50_32x4d')
+    input = torch.randn((1, 3, 512, 512)).cuda()
+    net = CRAFTNet(backbone='vgg16').cuda()
     print(net(input).size())
     import torchsummary
     # with torch.no_grad():
-    print(torchsummary.summary(net, (3, 768, 768), batch_size=1,device='cpu'))
+    print(torchsummary.summary(net, (3, 64, 64), batch_size=1,device='cuda'))
     exit()

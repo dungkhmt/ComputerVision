@@ -4,7 +4,7 @@ import torch
 from functools import partial
 import glob
 
-list_model = glob.glob('./log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/*.pth.tar')
+list_model = glob.glob('./log/se_resnext101_32x4d-final-text-net-total-text-768-2/*.pth.tar')
 print(list_model)
 for p in list_model:
     if p == './log/se_resnext101_32x4d-final-text-net-total-text-no-randomcrop/quick_save_checkpoint_ep46.pth.tar':
